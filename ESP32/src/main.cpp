@@ -42,6 +42,34 @@ bool fullcar = false;
 bool fullmotor = false;
 bool blinkmotor = false;
 bool blinkcar = false;
+// WiFi + MQTT config
+#define WIFI_SSID       "YOUR_WIFI_NAME"
+#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
+#define TOKEN           "5cJxzxh2jbnYmobbRUIO"
+#define THINGSBOARD_SERVER "thingsboard.cloud"
+#define THINGSBOARD_PORT 1883
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+/ === WiFi + MQTT Setup ===
+void setupWiFi() {
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500); Serial.print(".");
+  }
+  Serial.println("WiFi connected");
+  client.setServer(THINGSBOARD_SERVER, THINGSBOARD_PORT);
+}
+
+void reconnectMQTT() {
+  while (!client.connected()) {
+    if (client.connect("ESP32Client", TOKEN, nullptr)) {
+      Serial.println("Connected to ThingsBoard");
+    } else {
+      delay(2000);
+    }
+  }
+}
 
 // --- ISR debounce flags ---
 volatile bool flag_isr12 = false;
@@ -196,6 +224,19 @@ void loop() {
     publishTelemetry(gasPPM, gasPPM > GAS_THRESHOLD ? "Gas leak!" : "Safe");
     lastPublish = currentMillis;
   }
+  // === Gửi Telemetry ===
+void publishTelemetry(float gasPPM, const char* status) {
+  StaticJsonDocument<256> doc;
+  doc["gas"] = gasPPM;
+  doc["status"] = status;
+  doc["car_count"] = car;
+  doc["motorbike_count"] = motor;
+
+  char buffer[256];
+  serializeJson(doc, buffer);
+  client.publish("v1/devices/me/telemetry", buffer);
+}
+
 
   // Servo mở/đóng theo cảm biến khoảng cách
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
