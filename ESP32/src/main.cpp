@@ -188,14 +188,14 @@ void loop() {
     if (motor == 50) fullmotor = true;
   }
 
-  // Gas
-  unsigned long currentMillis = millis();
-  if (currentMillis - lastPublish >= publishInterval) {
-    float gasPPM = readGasPPM();
-    digitalWrite(BUZZER_PIN, gasPPM > GAS_THRESHOLD ? HIGH : LOW);
-    publishTelemetry(gasPPM, gasPPM > GAS_THRESHOLD ? "Gas leak!" : "Safe");
-    lastPublish = currentMillis;
-  }
+  // // Gas
+  // unsigned long currentMillis = millis();
+  // if (currentMillis - lastPublish >= publishInterval) {
+  //   float gasPPM = readGasPPM();
+  //   digitalWrite(BUZZER_PIN, gasPPM > GAS_THRESHOLD ? HIGH : LOW);
+  //   publishTelemetry(gasPPM, gasPPM > GAS_THRESHOLD ? "Gas leak!" : "Safe");
+  //   lastPublish = currentMillis;
+  // }
 
   // Servo mở/đóng theo cảm biến khoảng cách
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
