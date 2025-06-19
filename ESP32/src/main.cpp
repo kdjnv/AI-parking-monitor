@@ -7,10 +7,10 @@
 #include <ESP32Servo.h>
 
 // WiFi + MQTT config
-#define WIFI_SSID       "YOUR_WIFI_NAME"
-#define WIFI_PASSWORD   "YOUR_WIFI_PASSWORD"
-#define TOKEN           "YOUR_ACCESS_TOKEN"
-#define THINGSBOARD_SERVER "demo.thingsboard.io"
+#define WIFI_SSID       "Cam Va Quyt"
+#define WIFI_PASSWORD   "phongdz003"
+#define TOKEN           "5cJxzxh2jbnYmobbRUIO"
+#define THINGSBOARD_SERVER "thingsboard.cloud"
 #define THINGSBOARD_PORT 1883
 
 WiFiClient espClient;
@@ -139,7 +139,7 @@ void setup() {
   pinMode(14, INPUT_PULLDOWN); attachInterrupt(14, isr14, RISING);
   pinMode(23, INPUT_PULLDOWN); attachInterrupt(23, isr23, RISING);
 
-  lcd.clear(); lcd.print("He thong san sang");
+  lcd.clear(); lcd.print("He thong san sang"); lcd.clear();
 }
 
 // === LOOP ===
