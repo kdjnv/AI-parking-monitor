@@ -49,6 +49,7 @@ bool fullcar = false;
 bool fullmotor = false;
 bool blinkmotor = false;
 bool blinkcar = false;
+bool parkingLocked = false; // Trạng thái khoá bãi xe (ban đầu mở)
 
 // --- ISR debounce flags ---
 volatile bool flag_isr12 = false;
@@ -153,6 +154,8 @@ void setup() {
 
   pinMode(BUZZER_PIN, OUTPUT); 
   digitalWrite(BUZZER_PIN, LOW);
+  // XL BUTTOn  
+  client.setCallback(rpcCallback);
 
   // ISR config
   pinMode(12, INPUT_PULLDOWN);
@@ -234,6 +237,18 @@ void loop() {
     publishTelemetry(gasPPM, gasPPM > GAS_THRESHOLD ? "Gas leak!" : "Safe");
     lastPublish = currentMillis;
   }
+if (!parkingLocked) {
+  long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
+  long dist_out = readDistanceCM(TRIG_OUT, ECHO_OUT);
+
+  // điều khiển servo như cũ
+  if (dist_out <= 4 && !Gateleft) {
+    servoleft.write(0); Gateleft = true;
+  }
+  if (dist_in <= 4 && Gateleft) {
+    servoleft.write(90); Serial2.write("DETECT"); Gateleft = false;
+  }
+}
 
   // Servo mở/đóng theo cảm biến khoảng cách
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
@@ -293,4 +308,19 @@ void loop() {
   }
 
   delay(500);
+  if (client.connected()) {
+  client.loop();
+}
+void rpcCallback(char* topic, byte* payload, unsigned int length) {
+  StaticJsonDocument<128> doc;
+  deserializeJson(doc, payload, length);
+
+  const char* method = doc["method"];
+  if (strcmp(method, "lock_parking") == 0) {
+    parkingLocked = doc["params"]; // true hoặc false
+    Serial.print("Parking locked: "); Serial.println(parkingLocked);
+  }
+}
+  client.setCallback(rpcCallback);
+  client.subscribe("v1/devices/me/rpc/request/+");
 }
