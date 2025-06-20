@@ -173,8 +173,6 @@ void loop() {
         return;
     }
 
-    // Chá» 200ms giá»¯a cÃ¡c láº§n nháº­n dáº¡ng
-    //ei_sleep(200);
 
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
     if (!snapshot_buf) {
@@ -201,7 +199,7 @@ void loop() {
         return;
     }
 
-    // In káº¿t quáº£ nháº­n dáº¡ng
+    // In ket qua nhan dang
     ei_printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
               result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
@@ -213,7 +211,7 @@ void loop() {
         ei_printf("  %s (%f) [ x: %u, y: %u, width: %u, height: %u ]\r\n",
                   bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
 
-        // âœ… Kiá»ƒm tra Ä‘á»‘i tÆ°á»£ng vÃ  gá»­i UART
+        
         String lbl = String(bb.label);
         lbl.toLowerCase();
         if (lbl == "car" && fixbug) {
