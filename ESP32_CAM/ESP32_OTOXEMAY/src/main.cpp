@@ -88,6 +88,7 @@ static bool is_initialised = false;
 uint8_t *snapshot_buf; //points to the output of the capture
 
 bool detect_mode = false;
+bool fixbug = false;
 static int ei_camera_get_data(size_t offset, size_t length, float *out_ptr);
 
 static camera_config_t camera_config = {
@@ -154,23 +155,26 @@ void setup()
 *
 * @param[in]  debug  Get debug info if true
 */
-// --- Hàm loop() ---
+// --- HÃ m loop() ---
 void loop() {
-    // Nếu chưa nhận DETECT thì kiểm tra UART
+
+    // Náº¿u chÆ°a nháº­n DETECT thÃ¬ kiá»ƒm tra UART
     if (!detect_mode) {
         if (Serial.available()) {
             String cmd = Serial.readStringUntil('\n');
             cmd.trim();
             if (cmd == "DETECT") {
+                while (Serial.available()) Serial.read();
                 detect_mode = true;
+                fixbug = false;
                 ei_printf("Received DETECT command. Starting inference...\n");
             }
         }
         return;
     }
 
-    // Chờ 200ms giữa các lần nhận dạng
-    ei_sleep(200);
+    // Chá» 200ms giá»¯a cÃ¡c láº§n nháº­n dáº¡ng
+    //ei_sleep(200);
 
     snapshot_buf = (uint8_t*)malloc(EI_CAMERA_RAW_FRAME_BUFFER_COLS * EI_CAMERA_RAW_FRAME_BUFFER_ROWS * EI_CAMERA_FRAME_BYTE_SIZE);
     if (!snapshot_buf) {
@@ -189,6 +193,7 @@ void loop() {
     }
 
     ei_impulse_result_t result = { 0 };
+    memset(&result, 0, sizeof(result));
     EI_IMPULSE_ERROR err = run_classifier(&signal, &result, debug_nn);
     if (err != EI_IMPULSE_OK) {
         ei_printf("ERR: Failed to run classifier (%d)\n", err);
@@ -196,7 +201,7 @@ void loop() {
         return;
     }
 
-    // In kết quả nhận dạng
+    // In káº¿t quáº£ nháº­n dáº¡ng
     ei_printf("Predictions (DSP: %d ms., Classification: %d ms., Anomaly: %d ms.): \n",
               result.timing.dsp, result.timing.classification, result.timing.anomaly);
 
@@ -208,17 +213,19 @@ void loop() {
         ei_printf("  %s (%f) [ x: %u, y: %u, width: %u, height: %u ]\r\n",
                   bb.label, bb.value, bb.x, bb.y, bb.width, bb.height);
 
-        // ✅ Kiểm tra đối tượng và gửi UART
+        // âœ… Kiá»ƒm tra Ä‘á»‘i tÆ°á»£ng vÃ  gá»­i UART
         String lbl = String(bb.label);
         lbl.toLowerCase();
-        if (lbl == "car") {
+        if (lbl == "car" && fixbug) {
             Serial.println("OTO");
             detect_mode = false;
-        } else if (lbl == "motor") {
+        } else if (lbl == "motor" && fixbug) {
             Serial.println("XEMAY");
             detect_mode = false;
         }
     }
+    fixbug = true;
+    memset(&result, 0, sizeof(result));
 #else
     for (uint16_t i = 0; i < EI_CLASSIFIER_LABEL_COUNT; i++) {
         ei_printf("  %s: %.5f\r\n", ei_classifier_inferencing_categories[i], result.classification[i].value);

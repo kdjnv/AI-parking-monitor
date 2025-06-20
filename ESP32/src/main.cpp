@@ -50,8 +50,8 @@ bool fullmotor = false;
 bool blinkmotor = false;
 bool blinkcar = false;
 
-bool abcdxyz = false;
-bool onAI = false;
+bool ONSYS = true;
+bool onAI = true;
 
 // --- ISR debounce flags ---
 volatile bool flag_isr12 = false;
@@ -119,7 +119,7 @@ void reconnectMQTT() {
   }
 }
 
-// === GAS đọc PPM ===
+// === GAS Ä‘á»c PPM ===
 float readGasPPM() {
   int adcValue = analogRead(MQ2_PIN);
   float voltage = adcValue * (3.3 / 4095.0);
@@ -128,7 +128,7 @@ float readGasPPM() {
   return ppm;
 }
 
-// === Gửi Telemetry ===
+// === Gá»­i Telemetry ===
 void publishTelemetry(float gasPPM, const char* status) {
   StaticJsonDocument<256> doc;
   doc["gas"] = gasPPM;
@@ -146,7 +146,7 @@ void publishTelemetry(float gasPPM, const char* status) {
   client.publish("v1/devices/me/telemetry", buffer);
 }
 
-// === Đọc khoảng cách ===
+// === Äá»c khoáº£ng cÃ¡ch ===
 long readDistanceCM(int trigPin, int echoPin) {
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
@@ -220,47 +220,29 @@ unsigned long lastPublish = 0;
 const unsigned long publishInterval = 2000;
 String uartBuffer = "";
 bool detectcar = false;
-bool detectmotor = true;
+bool detectmotor = false;
 
 void loop() {
   if (!client.connected()) reconnectMQTT();
   client.loop();
 
-    // Đọc UART từ Serial2
-  // while (Serial2.available()) {
-  //   char c = Serial2.read();
-  //   if (c == '\n') {
-  //     uartBuffer.trim(); // loại bỏ khoảng trắng hoặc \r
-  //     if (uartBuffer == "CAR") {
-  //       detectcar = true;
-  //       Serial.println("Nhận được CAR từ UART");
-  //     } else if (uartBuffer == "MOTOR") {
-  //       detectmotor = true;
-  //       Serial.println("Nhận được MOTOR từ UART");
-  //     }
-  //     uartBuffer = ""; // reset buffer sau khi xử lý
-  //   } else {
-  //     uartBuffer += c;
-  //   }
-  // }
-
-  // Xử lý ISR debounce
-  if (flag_isr12) {
+  // Xá»­ lÃ½ ISR debounce
+  if (flag_isr12 && !onAI) {
     flag_isr12 = false;
     if (motor > 0) motor--;
     fullmotor = false;
   }
-  if (flag_isr13) {
+  if (flag_isr13 && !onAI && ONSYS) {
     flag_isr13 = false;
     if (car < 20) car++;
     if (car == 20) fullcar = true;
   }
-  if (flag_isr14) {
+  if (flag_isr14 && !onAI) {
     flag_isr14 = false;
     if (car > 0) car--;
     fullcar = false;
   }
-  if (flag_isr23) {
+  if (flag_isr23 && !onAI && ONSYS) {
     flag_isr23 = false;
     if (motor < 50) motor++;
     if (motor == 50) fullmotor = true;
@@ -275,11 +257,11 @@ void loop() {
     lastPublish = currentMillis;
   }
 
-  // Servo mở/đóng theo cảm biến khoảng cách
+  // Servo má»Ÿ/Ä‘Ã³ng theo cáº£m biáº¿n khoáº£ng cÃ¡ch
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
   long dist_out = readDistanceCM(TRIG_OUT, ECHO_OUT);
 
-  if (dist_out >= 0 && dist_out <= 4) {
+  if (dist_out >= 0 && dist_out <= 4 && ONSYS) {
     if (!Gateleft) {
       if (servoleft.read() != 0) servoleft.write(0);
       Gateleft = true;
@@ -296,28 +278,64 @@ void loop() {
       if (servoleft.read() != 90) servoleft.write(90);
       Serial2.print("DETECT");
       Gateleft = false;
+      while (!detectcar && !detectmotor) {
+        if (Serial2.available()){
+          char c = Serial2.read();
+          if (c == '\n') {
+            uartBuffer.trim(); // loáº¡i bá» khoáº£ng tráº¯ng hoáº·c \r
+            if (uartBuffer == "OTO") {
+              detectcar = true;
+              Serial.println("Nháº­n Ä‘Æ°á»£c OTO tá»« UART");
+            } else if (uartBuffer == "XEMAY") {
+              detectmotor = true;
+              Serial.println("Nháº­n Ä‘Æ°á»£c XEMAY tá»« UART");
+            }
+            uartBuffer = ""; // reset buffer sau khi xá»­ lÃ½
+          } else {
+            uartBuffer += c;
+          }
+        }
+      }
     }
     if (detectcar){
       detectcar = false;
-      car++;
+      if (car < 20) car++;
     }
     if (detectmotor){
       detectmotor = false;
-      motor++;
+      if (motor < 50) motor++;
     }
   } else if (dist_in >= 5 && dist_in <= 10) {
     if (!Gateright) {
-      if (servoright.read() != 0) servoright.write(0);
       Serial2.print("DETECT");
       Gateright = true;
+      while (!detectcar && !detectmotor) {
+        if (Serial2.available()){
+          char c = Serial2.read();
+          if (c == '\n') {
+            uartBuffer.trim(); // loáº¡i bá» khoáº£ng tráº¯ng hoáº·c \r
+            if (uartBuffer == "OTO") {
+              detectcar = true;
+              Serial.println("Nháº­n Ä‘Æ°á»£c OTO tá»« UART");
+            } else if (uartBuffer == "XEMAY") {
+              detectmotor = true;
+              Serial.println("Nháº­n Ä‘Æ°á»£c XEMAY tá»« UART");
+            }
+            uartBuffer = ""; // reset buffer sau khi xá»­ lÃ½
+          } else {
+            uartBuffer += c;
+          }
+        }
+      }
+      if (servoright.read() != 0) servoright.write(0);
     }
     if (detectcar){
       detectcar = false;
-      car--;
+      if (car != 0) car--;
     }
     if (detectmotor){
       detectmotor = false;
-      motor--;
+      if (motor != 0) motor--;
     }
   }
 
@@ -349,7 +367,7 @@ void loop() {
   }
 
   lcd.setCursor(0,3);
-  if (abcdxyz) lcd.print("ON ");
+  if (ONSYS) lcd.print("ON ");
   else lcd.print("OFF");
 
   lcd.setCursor(10,3);
@@ -369,15 +387,14 @@ void rpcCallback(char* topic, byte* payload, unsigned int length) {
 
   const char* method = doc["method"];
   if (strcmp(method, "set_abcdxyz") == 0) {
-    abcdxyz = doc["params"]; // true hoặc false
-    Serial.print("abcdxyz: ");
-    Serial.println(abcdxyz ? "ON" : "OFF");
+    ONSYS = doc["params"]; // true hoáº·c false
+    Serial.print("ONSYS: ");
+    Serial.println(ONSYS ? "ON" : "OFF");
   }
 
   if (strcmp(method, "on/offAI") == 0) {
-    onAI = doc["params"]; // true hoặc false
+    onAI = doc["params"]; // true hoáº·c false
     Serial.print("AI: ");
     Serial.println(onAI ? "ON" : "OFF");
   }
 }
-
