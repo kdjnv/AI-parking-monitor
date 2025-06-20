@@ -49,7 +49,8 @@ bool fullcar = false;
 bool fullmotor = false;
 bool blinkmotor = false;
 bool blinkcar = false;
-bool parkingLocked = false; // Trạng thái khoá bãi xe (ban đầu mở)
+// 
+bool parkingLocked = false; // Mặc định bãi xe mở
 
 // --- ISR debounce flags ---
 volatile bool flag_isr12 = false;
@@ -103,6 +104,7 @@ void setupWiFi() {
 }
 
 void reconnectMQTT() {
+  // Wait until we're connected
   while (!client.connected()) {
     if (client.connect("ESP32Client", TOKEN, nullptr)) {
       Serial.println("Connected to ThingsBoard");
@@ -110,6 +112,7 @@ void reconnectMQTT() {
       delay(2000);
     }
   }
+  client.subscribe("v1/devices/me/rpc/request/+");
 }
 
 // === GAS đọc PPM ===
@@ -128,6 +131,8 @@ void publishTelemetry(float gasPPM, const char* status) {
   doc["status"] = status;
   doc["car_count"] = car;
   doc["motorbike_count"] = motor;
+  doc["locked"] = parkingLocked;
+  doc["time"] = rtc.now().timestamp();
 
   char buffer[256];
   serializeJson(doc, buffer);
@@ -143,6 +148,20 @@ long readDistanceCM(int trigPin, int echoPin) {
   digitalWrite(trigPin, LOW);
   long duration = pulseIn(echoPin, HIGH, 30000);
   return duration * 0.034 / 2;
+
+}
+
+// === MQTT Callback ===
+void rpcCallback(char* topic, byte* payload, unsigned int length) {
+  StaticJsonDocument<128> doc;
+  deserializeJson(doc, payload, length);
+
+  const char* method = doc["method"];
+  if (strcmp(method, "lock_parking") == 0) {
+    parkingLocked = doc["params"];  // nhận true hoặc false
+    Serial.print("Parking locked: ");
+    Serial.println(parkingLocked ? "ON" : "OFF");
+  }
 }
 
 // === Setup ===
@@ -150,12 +169,12 @@ void setup() {
   Serial.begin(9600);
   Serial2.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
 
+  client.setCallback(rpcCallback);
+
   setupWiFi();
 
   pinMode(BUZZER_PIN, OUTPUT); 
   digitalWrite(BUZZER_PIN, LOW);
-  // XL BUTTOn  
-  client.setCallback(rpcCallback);
 
   // ISR config
   pinMode(12, INPUT_PULLDOWN);
@@ -237,48 +256,42 @@ void loop() {
     publishTelemetry(gasPPM, gasPPM > GAS_THRESHOLD ? "Gas leak!" : "Safe");
     lastPublish = currentMillis;
   }
+
+  // Servo mở/đóng theo button và cảm biến khoảng cách
 if (!parkingLocked) {
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
   long dist_out = readDistanceCM(TRIG_OUT, ECHO_OUT);
 
-  // điều khiển servo như cũ
-  if (dist_out <= 4 && !Gateleft) {
-    servoleft.write(0); Gateleft = true;
-  }
-  if (dist_in <= 4 && Gateleft) {
-    servoleft.write(90); Serial2.write("DETECT"); Gateleft = false;
-  }
-}
-
-  // Servo mở/đóng theo cảm biến khoảng cách
-  long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
-  long dist_out = readDistanceCM(TRIG_OUT, ECHO_OUT);
-
+  // 🚗 Xe ĐI RA: khoảng cách ở OUT gần
   if (dist_out >= 0 && dist_out <= 4) {
     if (!Gateleft) {
-      if (servoleft.read() != 0) servoleft.write(0);
+      servoleft.write(0); // Mở cổng trái
       Gateleft = true;
     }
   } else if (dist_out > 4 && dist_out <= 10) {
     if (Gateright) {
-      if (servoright.read() != 90) servoright.write(90);
+      servoright.write(90); // Đóng cổng phải
       Gateright = false;
     }
   }
 
+  // 🚗 Xe ĐI VÀO: khoảng cách ở IN gần
   if (dist_in >= 0 && dist_in <= 4) {
     if (Gateleft) {
-      if (servoleft.read() != 90) servoleft.write(90);
+      servoleft.write(90); // Đóng cổng trái
       Serial2.print("DETECT");
       Gateleft = false;
     }
   } else if (dist_in >= 5 && dist_in <= 10) {
     if (!Gateright) {
-      if (servoright.read() != 0) servoright.write(0);
+      servoright.write(0); // Mở cổng phải
       Serial2.print("DETECT");
       Gateright = true;
     }
   }
+}
+
+
 
   //LCD
   DateTime now = rtc.now();
@@ -308,19 +321,4 @@ if (!parkingLocked) {
   }
 
   delay(500);
-  if (client.connected()) {
-  client.loop();
-}
-void rpcCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<128> doc;
-  deserializeJson(doc, payload, length);
-
-  const char* method = doc["method"];
-  if (strcmp(method, "lock_parking") == 0) {
-    parkingLocked = doc["params"]; // true hoặc false
-    Serial.print("Parking locked: "); Serial.println(parkingLocked);
-  }
-}
-  client.setCallback(rpcCallback);
-  client.subscribe("v1/devices/me/rpc/request/+");
 }
