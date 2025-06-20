@@ -49,8 +49,9 @@ bool fullcar = false;
 bool fullmotor = false;
 bool blinkmotor = false;
 bool blinkcar = false;
-// 
-bool parkingLocked = false; // Mặc định bãi xe mở
+
+bool abcdxyz = false;
+bool onAI = false;
 
 // --- ISR debounce flags ---
 volatile bool flag_isr12 = false;
@@ -62,6 +63,8 @@ unsigned long last_isr12_time = 0;
 unsigned long last_isr13_time = 0;
 unsigned long last_isr14_time = 0;
 unsigned long last_isr23_time = 0;
+
+void rpcCallback(char* topic, byte* payload, unsigned int length);
 
 // === ISR debounce ===
 void IRAM_ATTR isr12() {
@@ -104,15 +107,16 @@ void setupWiFi() {
 }
 
 void reconnectMQTT() {
-  // Wait until we're connected
   while (!client.connected()) {
     if (client.connect("ESP32Client", TOKEN, nullptr)) {
       Serial.println("Connected to ThingsBoard");
+
+      client.setCallback(rpcCallback);
+      client.subscribe("v1/devices/me/rpc/request/+");
     } else {
       delay(2000);
     }
   }
-  client.subscribe("v1/devices/me/rpc/request/+");
 }
 
 // === GAS đọc PPM ===
@@ -131,8 +135,11 @@ void publishTelemetry(float gasPPM, const char* status) {
   doc["status"] = status;
   doc["car_count"] = car;
   doc["motorbike_count"] = motor;
-  doc["locked"] = parkingLocked;
-  doc["time"] = rtc.now().timestamp();
+
+  DateTime now = rtc.now();
+  char timestr[9]; // "HH:MM:SS" + null
+  snprintf(timestr, sizeof(timestr), "%02d:%02d:%02d", now.hour(), now.minute(), now.second());
+  doc["time"] = timestr;
 
   char buffer[256];
   serializeJson(doc, buffer);
@@ -148,28 +155,12 @@ long readDistanceCM(int trigPin, int echoPin) {
   digitalWrite(trigPin, LOW);
   long duration = pulseIn(echoPin, HIGH, 30000);
   return duration * 0.034 / 2;
-
-}
-
-// === MQTT Callback ===
-void rpcCallback(char* topic, byte* payload, unsigned int length) {
-  StaticJsonDocument<128> doc;
-  deserializeJson(doc, payload, length);
-
-  const char* method = doc["method"];
-  if (strcmp(method, "lock_parking") == 0) {
-    parkingLocked = doc["params"];  // nhận true hoặc false
-    Serial.print("Parking locked: ");
-    Serial.println(parkingLocked ? "ON" : "OFF");
-  }
 }
 
 // === Setup ===
 void setup() {
   Serial.begin(9600);
   Serial2.begin(115200, SERIAL_8N1, RX_PIN, TX_PIN);
-
-  client.setCallback(rpcCallback);
 
   setupWiFi();
 
@@ -211,20 +202,47 @@ void setup() {
   if (rtc.lostPower()) {
     rtc.adjust(DateTime(F(__DATE__), F(__TIME__)));
   }
+
+
   lcd.clear();
   lcd.print("Doc thoi gian");
   servoleft.write(90);
   servoright.write(90);
+
+  client.setCallback(rpcCallback);
+  client.subscribe("v1/devices/me/rpc/request/+");
+
   delay(1000);
 }
 
 // === LOOP ===
 unsigned long lastPublish = 0;
 const unsigned long publishInterval = 2000;
+String uartBuffer = "";
+bool detectcar = false;
+bool detectmotor = true;
 
 void loop() {
   if (!client.connected()) reconnectMQTT();
   client.loop();
+
+    // Đọc UART từ Serial2
+  // while (Serial2.available()) {
+  //   char c = Serial2.read();
+  //   if (c == '\n') {
+  //     uartBuffer.trim(); // loại bỏ khoảng trắng hoặc \r
+  //     if (uartBuffer == "CAR") {
+  //       detectcar = true;
+  //       Serial.println("Nhận được CAR từ UART");
+  //     } else if (uartBuffer == "MOTOR") {
+  //       detectmotor = true;
+  //       Serial.println("Nhận được MOTOR từ UART");
+  //     }
+  //     uartBuffer = ""; // reset buffer sau khi xử lý
+  //   } else {
+  //     uartBuffer += c;
+  //   }
+  // }
 
   // Xử lý ISR debounce
   if (flag_isr12) {
@@ -257,41 +275,51 @@ void loop() {
     lastPublish = currentMillis;
   }
 
-  // Servo mở/đóng theo button và cảm biến khoảng cách
-if (!parkingLocked) {
+  // Servo mở/đóng theo cảm biến khoảng cách
   long dist_in = readDistanceCM(TRIG_IN, ECHO_IN);
   long dist_out = readDistanceCM(TRIG_OUT, ECHO_OUT);
 
-  // 🚗 Xe ĐI RA: khoảng cách ở OUT gần
   if (dist_out >= 0 && dist_out <= 4) {
     if (!Gateleft) {
-      servoleft.write(0); // Mở cổng trái
+      if (servoleft.read() != 0) servoleft.write(0);
       Gateleft = true;
     }
   } else if (dist_out > 4 && dist_out <= 10) {
     if (Gateright) {
-      servoright.write(90); // Đóng cổng phải
+      if (servoright.read() != 90) servoright.write(90);
       Gateright = false;
     }
   }
 
-  // 🚗 Xe ĐI VÀO: khoảng cách ở IN gần
   if (dist_in >= 0 && dist_in <= 4) {
     if (Gateleft) {
-      servoleft.write(90); // Đóng cổng trái
+      if (servoleft.read() != 90) servoleft.write(90);
       Serial2.print("DETECT");
       Gateleft = false;
     }
+    if (detectcar){
+      detectcar = false;
+      car++;
+    }
+    if (detectmotor){
+      detectmotor = false;
+      motor++;
+    }
   } else if (dist_in >= 5 && dist_in <= 10) {
     if (!Gateright) {
-      servoright.write(0); // Mở cổng phải
+      if (servoright.read() != 0) servoright.write(0);
       Serial2.print("DETECT");
       Gateright = true;
     }
+    if (detectcar){
+      detectcar = false;
+      car--;
+    }
+    if (detectmotor){
+      detectmotor = false;
+      motor--;
+    }
   }
-}
-
-
 
   //LCD
   DateTime now = rtc.now();
@@ -320,5 +348,36 @@ if (!parkingLocked) {
     blinkcar = !blinkcar;
   }
 
+  lcd.setCursor(0,3);
+  if (abcdxyz) lcd.print("ON ");
+  else lcd.print("OFF");
+
+  lcd.setCursor(10,3);
+  if (onAI) lcd.print("ON ");
+  else lcd.print("OFF");
+
   delay(500);
 }
+
+void rpcCallback(char* topic, byte* payload, unsigned int length) {
+  StaticJsonDocument<128> doc;
+  DeserializationError error = deserializeJson(doc, payload, length);
+  if (error) {
+    Serial.println("deserializeJson() failed");
+    return;
+  }
+
+  const char* method = doc["method"];
+  if (strcmp(method, "set_abcdxyz") == 0) {
+    abcdxyz = doc["params"]; // true hoặc false
+    Serial.print("abcdxyz: ");
+    Serial.println(abcdxyz ? "ON" : "OFF");
+  }
+
+  if (strcmp(method, "on/offAI") == 0) {
+    onAI = doc["params"]; // true hoặc false
+    Serial.print("AI: ");
+    Serial.println(onAI ? "ON" : "OFF");
+  }
+}
+
